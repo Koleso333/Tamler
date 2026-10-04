@@ -1,0 +1,25 @@
+{
+  "id": "custom-background",
+  "name": "Custom Background",
+  "description": "Your own picture behind the messages in Chat, Cowork and Code",
+  "version": "0.1.0",
+  "main": "index.js",
+  "matches": ["https://claude.ai/*"],
+  "settings": [
+    { "key": "images", "type": "files", "label": "Images", "description": "PNG, JPG, WEBP, GIF, AVIF or BMP.", "accept": ".png,.jpg,.jpeg,.webp,.gif,.avif,.bmp" },
+    { "key": "image", "type": "select", "label": "Background", "description": "Which uploaded image is shown", "placeholder": "Upload an image first" },
+    { "key": "where", "type": "select", "label": "Show in", "default": "both", "options": [
+      { "value": "both", "label": "Chat and Code" },
+      { "value": "chat", "label": "Chat and Cowork" },
+      { "value": "code", "label": "Code" }
+    ] },
+    { "key": "fit", "type": "select", "label": "Image size", "default": "cover", "options": [
+      { "value": "cover", "label": "Fill" },
+      { "value": "stretch", "label": "Stretch" },
+      { "value": "height", "label": "Fit height" },
+      { "value": "width", "label": "Fit width" },
+      { "value": "original", "label": "Original size" }
+    ] },
+    { "key": "overlay", "type": "number", "label": "Default background, %", "description": "0% — only the image, 100% — only the default background", "default": 60, "min": 0, "max": 100, "step": 1 }
+  ]
+}

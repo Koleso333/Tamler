@@ -1,0 +1,8 @@
+.cache/
+build/
+node_modules/
+data/
+*.log
+dist/
+docs/
+FOR_AI.md

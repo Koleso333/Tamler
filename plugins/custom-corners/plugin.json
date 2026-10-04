@@ -1,0 +1,25 @@
+{
+  "id": "custom-corners",
+  "name": "Custom Corners",
+  "description": "Corner shape and rounding size across the whole app",
+  "version": "0.1.0",
+  "main": "index.js",
+  "settings": [
+    { "key": "shape", "type": "select", "label": "Corner shape", "description": "Curve of every rounded corner. Arc is Claude's native circular corner.", "default": "arc", "options": [
+      { "value": "arc", "label": "Arc" },
+      { "value": "softbox", "label": "Softbox" },
+      { "value": "squircle", "label": "Squircle" },
+      { "value": "continuum", "label": "Continuum" },
+      { "value": "marshmallow", "label": "Marshmallow" },
+      { "value": "cloud", "label": "Cloud" },
+      { "value": "pebble", "label": "Pebble" },
+      { "value": "capsule", "label": "Capsule" },
+      { "value": "featheredge", "label": "Featheredge" },
+      { "value": "lame", "label": "Lamé" },
+      { "value": "hyper", "label": "Hyper" },
+      { "value": "bevel", "label": "Bevel" },
+      { "value": "facet", "label": "Facet" }
+    ] },
+    { "key": "scale", "type": "number", "label": "Rounding size, ×", "description": "Multiplies every corner radius on top of the shape's own size. Circles and pills stay as they are.", "default": 1.2, "min": 0, "max": 3, "step": 0.05 }
+  ]
+}

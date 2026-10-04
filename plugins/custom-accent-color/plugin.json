@@ -1,0 +1,33 @@
+{
+  "id": "custom-accent-color",
+  "name": "Custom Accent Color",
+  "description": "Your own accent color, Claude orange and background tint across the whole app",
+  "version": "0.1.0",
+  "main": "index.js",
+  "settings": [
+    { "key": "accent", "type": "color", "label": "Accent color", "description": "Buttons, switches, links, focus rings and selection. Blue by default.", "default": "#2a78d6", "options": [
+      { "value": "#2a78d6", "label": "Claude blue" },
+      { "value": "#5b5bd6", "label": "Indigo" },
+      { "value": "#8b5cf6", "label": "Violet" },
+      { "value": "#d946ef", "label": "Fuchsia" },
+      { "value": "#e5466b", "label": "Rose" },
+      { "value": "#dc2626", "label": "Red" },
+      { "value": "#ea7a1a", "label": "Orange" },
+      { "value": "#d4a017", "label": "Amber" },
+      { "value": "#16a34a", "label": "Green" },
+      { "value": "#0d9488", "label": "Teal" },
+      { "value": "#0891b2", "label": "Cyan" },
+      { "value": "#6b7280", "label": "Graphite" }
+    ] },
+    { "key": "brand", "type": "color", "label": "Claude orange", "description": "Send button, Claude logo and other orange highlights.", "default": "#d97757", "options": [
+      { "value": "#d97757", "label": "Claude clay" },
+      { "value": "#2a78d6", "label": "Blue" },
+      { "value": "#8b5cf6", "label": "Violet" },
+      { "value": "#e5466b", "label": "Rose" },
+      { "value": "#16a34a", "label": "Green" },
+      { "value": "#0d9488", "label": "Teal" },
+      { "value": "#6b7280", "label": "Graphite" }
+    ] },
+    { "key": "tint", "type": "number", "label": "Background tint, %", "description": "Mixes the accent hue into backgrounds, borders and text grays. 0 keeps Claude's neutral surfaces.", "default": 0, "min": 0, "max": 100, "step": 5 }
+  ]
+}

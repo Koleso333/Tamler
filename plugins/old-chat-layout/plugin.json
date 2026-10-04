@@ -1,0 +1,16 @@
+{
+  "id": "old-chat-layout",
+  "name": "Old Chat Layout",
+  "description": "Sessions in one list sorted by time, with a visible grouping switch in the sidebar",
+  "version": "0.1.0",
+  "main": "index.js",
+  "matches": ["https://claude.ai/*"],
+  "settings": [
+    { "key": "groupBy", "type": "select", "label": "Group sessions", "description": "Applied when Claude starts and from the sidebar switch", "default": "date", "options": [
+      { "value": "date", "label": "By date" },
+      { "value": "none", "label": "No groups" },
+      { "value": "project", "label": "By project" }
+    ] },
+    { "key": "showSwitch", "type": "boolean", "label": "Show switch in sidebar", "default": true }
+  ]
+}

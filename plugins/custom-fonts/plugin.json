@@ -1,0 +1,17 @@
+{
+  "id": "custom-fonts",
+  "name": "Custom Fonts",
+  "description": "Your own font files and Google Fonts in Settings → Claude Code → Interface font",
+  "version": "0.1.0",
+  "main": "index.js",
+  "matches": ["https://claude.ai/*"],
+  "hosts": [
+    "https://fonts.google.com/metadata/*",
+    "https://fonts.googleapis.com/css2*",
+    "https://fonts.gstatic.com/*"
+  ],
+  "settings": [
+    { "key": "files", "type": "files", "label": "Font files", "description": "TTF, OTF, WOFF or WOFF2. Files of one family (Regular, Bold, Italic…) are joined into one font.", "accept": ".ttf,.otf,.woff,.woff2" },
+    { "key": "google", "type": "list", "label": "Google Fonts", "description": "Search the Google Fonts catalog and add families.", "placeholder": "Search Google Fonts…" }
+  ]
+}

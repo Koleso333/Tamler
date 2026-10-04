@@ -1,0 +1,13 @@
+{
+  "id": "custom-greeting",
+  "name": "Your \"What's up next\"",
+  "description": "Your own greeting on the Code start page instead of \"What's up next, NAME?\"",
+  "version": "0.1.0",
+  "main": "index.js",
+  "matches": ["https://claude.ai/*"],
+  "settings": [
+    { "key": "greeting", "type": "string", "label": "Greeting", "description": "Replaces \"What's up next, NAME?\". NAME becomes your name. Empty keeps Claude's text.", "default": "What’s up next, NAME?" },
+    { "key": "welcome", "type": "string", "label": "Welcome back", "description": "Replaces \"Welcome back, NAME\" shown when there are sessions. Empty keeps Claude's text.", "default": "" },
+    { "key": "name", "type": "string", "label": "Name", "description": "What NAME turns into. Empty uses your account name.", "default": "" }
+  ]
+}

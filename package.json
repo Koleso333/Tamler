@@ -1,0 +1,22 @@
+{
+  "name": "tamler",
+  "version": "0.6.0",
+  "private": true,
+  "description": "DOM and CSS plugin runtime for Claude Desktop",
+  "scripts": {
+    "inspect": "node scripts/inspect.cjs",
+    "build": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build.ps1",
+    "attach": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/attach.ps1",
+    "test": "node --test tests/runtime.test.cjs tests/store.test.cjs tests/mac.test.cjs",
+    "mac": "node scripts/mac.cjs",
+    "test:renderer": "node scripts/run-electron.cjs tests/renderer-fixture.cjs",
+    "test:mac-extension": "node scripts/run-electron.cjs tests/mac-extension-fixture.cjs",
+    "autostart": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/autostart.ps1",
+    "sources": "node scripts/claude-sources.cjs",
+    "package": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package.ps1",
+    "test:native": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test-native.ps1"
+  },
+  "devDependencies": {
+    "js-beautify": "^2.0.3"
+  }
+}

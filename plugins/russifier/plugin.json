@@ -1,0 +1,8 @@
+{
+  "id": "russifier",
+  "name": "Russifier",
+  "description": "Russian interface from Claude's own unreleased catalog; the app locale stays en-US for the servers",
+  "version": "0.1.0",
+  "main": "index.js",
+  "matches": ["https://claude.ai/*"]
+}
