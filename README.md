@@ -2,7 +2,7 @@
 
 Plugins for Claude Desktop. Tamler hooks into the running app and lets you load your own JS and CSS into it: themes, fonts, layout tweaks, whatever you want. It doesn't touch the EXE, ASAR or MSIX, so Claude updates normally.
 
-Works on Windows x64 (Claude Desktop 2.19675.0, Electron 44.4.3). macOS is in beta.
+Works on Windows x64 (Claude Desktop 2.26454.2, Electron 44.4.3). macOS is in beta.
 
 > Unofficial, not affiliated with Anthropic. It relies on Claude's internals, so any Claude update can break it. Use at your own risk.
 

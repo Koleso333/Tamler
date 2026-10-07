@@ -69,7 +69,8 @@ async function installTamler(window, plugins, managerFactory, state = {}) {
     return loadingUI ||= (async () => {
       const links = [...document.querySelectorAll('link[rel="modulepreload"]')].map(element => element.href);
       const vendorURL = links.find(url => /\/vendor-frame-[^/]+\.js/.test(url));
-      const sharedURL = links.find(url => /\/shared-frame-[^-]+\.js/.test(url));
+      // В хэше чанка бывают '-' и '_' (shared-frame-X-FEPizm.js), поэтому отсекаем только соседний shared-frame-boot.
+      const sharedURL = links.find(url => /\/shared-frame-(?!boot-)[^/]+\.js/.test(url));
       if (!vendorURL || !sharedURL) throw new Error('Claude UI modules unavailable');
       const [vendor, shared] = await Promise.all([import(vendorURL), import(sharedURL)]);
       const find = (module, predicate) => Object.values(module).find(value => predicate(componentSource(value), value));
