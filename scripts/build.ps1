@@ -9,7 +9,7 @@ if (-not $Executable) {
 }
 $Executable = (Resolve-Path -LiteralPath $Executable).Path
 $tamlerVersion = (Get-Content -LiteralPath (Join-Path (Split-Path $Executable) 'version') -Raw).Trim()
-if ($tamlerVersion -ne '44.4.3') { throw "This prototype only supports Electron 44.4.3; found $tamlerVersion" }
+if ($tamlerVersion -ne '44.7.0') { throw "This prototype only supports Electron 44.7.0; found $tamlerVersion" }
 New-Item -ItemType Directory -Force -Path 'build','.cache\electron','.cache\minhook' | Out-Null
 function Get-TamlerDownload($Url, $Target) {
   & curl.exe --fail --silent --show-error --location --max-time 60 $Url -o $Target

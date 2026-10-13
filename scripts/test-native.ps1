@@ -2,7 +2,7 @@ $ErrorActionPreference = 'Stop'
 $tamlerRoot = Split-Path -Parent $PSScriptRoot
 Set-Location -LiteralPath $tamlerRoot
 $tamlerElectron = Join-Path $tamlerRoot '.cache\electron\runtime\electron.exe'
-if (-not (Test-Path -LiteralPath $tamlerElectron)) { throw 'Extract stock Electron 44.4.3 x64 into .cache\electron\runtime first' }
+if (-not (Test-Path -LiteralPath $tamlerElectron)) { throw 'Extract stock Electron 44.7.0 x64 into .cache\electron\runtime first' }
 foreach ($tamlerName in @('fixture-pid.txt','fixture-await-second.txt','fixture-result.json','fixture-error.txt')) {
   $tamlerFile = Join-Path $tamlerRoot "build\$tamlerName"
   if (Test-Path -LiteralPath $tamlerFile) { Remove-Item -LiteralPath $tamlerFile }
