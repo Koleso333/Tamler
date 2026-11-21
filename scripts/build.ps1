@@ -9,15 +9,19 @@ if (-not $Executable) {
 }
 $Executable = (Resolve-Path -LiteralPath $Executable).Path
 $tamlerVersion = (Get-Content -LiteralPath (Join-Path (Split-Path $Executable) 'version') -Raw).Trim()
-if ($tamlerVersion -ne '44.7.0') { throw "This prototype only supports Electron 44.7.0; found $tamlerVersion" }
-New-Item -ItemType Directory -Force -Path 'build','.cache\electron','.cache\minhook' | Out-Null
+$tamlerSupportedVersions = @('44.9.3', '45.2.1', '45.3.3')
+if ($tamlerVersion -notin $tamlerSupportedVersions) { throw "Unsupported Electron $tamlerVersion. Supported versions: $($tamlerSupportedVersions -join ', ')" }
+$tamlerElectronCache = Join-Path $tamlerRoot ".cache\electron\$tamlerVersion"
+$tamlerHeaders = Join-Path $tamlerElectronCache 'node_headers\include\node'
+New-Item -ItemType Directory -Force -Path 'build',$tamlerElectronCache,'.cache\minhook' | Out-Null
 function Get-TamlerDownload($Url, $Target) {
   & curl.exe --fail --silent --show-error --location --max-time 60 $Url -o $Target
   if ($LASTEXITCODE -ne 0) { throw "Download failed: $Url" }
 }
-if (-not (Test-Path -LiteralPath '.cache\electron\node_headers\include\node\v8.h')) {
-  Get-TamlerDownload "https://artifacts.electronjs.org/headers/dist/v$tamlerVersion/node-v$tamlerVersion-headers.tar.gz" '.cache\electron\headers.tar.gz'
-  & tar -xzf '.cache\electron\headers.tar.gz' -C '.cache\electron'
+if (-not (Test-Path -LiteralPath (Join-Path $tamlerHeaders 'v8.h'))) {
+  $tamlerHeaderArchive = Join-Path $tamlerElectronCache 'headers.tar.gz'
+  Get-TamlerDownload "https://artifacts.electronjs.org/headers/dist/v$tamlerVersion/node-v$tamlerVersion-headers.tar.gz" $tamlerHeaderArchive
+  & tar -xzf $tamlerHeaderArchive -C $tamlerElectronCache
   if ($LASTEXITCODE -ne 0) { throw 'Header extraction failed' }
 }
 if (-not (Test-Path -LiteralPath '.cache\minhook\include\MinHook.h')) {
@@ -42,7 +46,7 @@ lib /nologo /machine:x64 /def:node.def /out:node.lib
 if errorlevel 1 exit /b 1
 cl /nologo /O2 /MT /c /I"$tamlerRoot\.cache\minhook\include" "$tamlerRoot\.cache\minhook\src\buffer.c" "$tamlerRoot\.cache\minhook\src\hook.c" "$tamlerRoot\.cache\minhook\src\trampoline.c" "$tamlerRoot\.cache\minhook\src\hde\hde64.c"
 if errorlevel 1 exit /b 1
-cl /nologo /std:c++20 /Zc:__cplusplus /EHsc /O2 /MT /LD /DV8_COMPRESS_POINTERS /DV8_ENABLE_SANDBOX /DV8_31BIT_SMIS_ON_64BIT_ARCH /I"$tamlerRoot\.cache\electron\node_headers\include\node" /I"$tamlerRoot\.cache\minhook\include" "$tamlerRoot\native\loader.cpp" buffer.obj hook.obj trampoline.obj hde64.obj node.lib delayimp.lib /link /DELAYLOAD:node.exe /OUT:tamler.dll
+cl /nologo /std:c++20 /Zc:__cplusplus /EHsc /O2 /MT /LD /DV8_COMPRESS_POINTERS /DV8_ENABLE_SANDBOX /DV8_31BIT_SMIS_ON_64BIT_ARCH /I"$tamlerHeaders" /I"$tamlerRoot\.cache\minhook\include" "$tamlerRoot\native\loader.cpp" buffer.obj hook.obj trampoline.obj hde64.obj node.lib delayimp.lib /link /DELAYLOAD:node.exe /OUT:tamler.dll
 if errorlevel 1 exit /b 1
 cl /nologo /std:c++20 /EHsc /O2 /MT "$tamlerRoot\native\injector.cpp" /link /OUT:tamler-inject.exe
 if errorlevel 1 exit /b 1

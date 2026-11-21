@@ -2,7 +2,7 @@
 
 Plugins for Claude Desktop. Tamler hooks into the running app and lets you load your own JS and CSS into it: themes, fonts, layout tweaks, whatever you want. It doesn't touch the EXE, ASAR or MSIX, so Claude updates normally.
 
-Works on Windows x64 (Claude Desktop 2.37337.1, Electron 44.7.0). macOS is in beta.
+Works on Windows x64 (Claude Desktop 6.28899.6, Electron 45.3.3). The build also supports Electron 45.2.1 and 44.9.3. macOS is in beta.
 
 > Unofficial, not affiliated with Anthropic. It relies on Claude's internals, so any Claude update can break it. Use at your own risk.
 
@@ -68,7 +68,9 @@ Plugins are CommonJS and run inside the page. The `start(api)` function receives
 - `options` to supply choices for settings;
 - `signal` and `cleanup` for shutdown.
 
-Setting types: `boolean`, `string`, `number`, `select`, `list`, `files`, `color`.
+Setting types: `boolean`, `string`, `number`, `select`, `list`, `files`, `color`. Any setting may have a `section`: the manager shows the section title before the first setting of each section.
+
+A plugin can also patch Claude's own scripts with `"patches": [{ "url", "find", "replace", "flags"? }]`: when a script whose address matches `url` loads, the core replaces the regular expression `find` with `replace` before the page runs it. Patches apply on the next page load: restart Claude after enabling the plugin (at launch the core reloads the Claude page once so the patches catch every script). The `status` control command shows which patches matched (`patched`). See `plugins/context-return`.
 
 The bundled plugins in `plugins/` are the best reference.
 

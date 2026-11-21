@@ -1,7 +1,8 @@
 const fs = require('node:fs');
 const path = require('node:path');
-const root = path.resolve(__dirname, '..');
-const entry = path.join(root, 'runtime', 'main.cjs');
+const project = path.resolve(__dirname, '..');
+const root = process.argv[2] ? path.resolve(process.argv[2]) : project;
+const entry = path.join(project, 'runtime', 'main.cjs');
 const source = `(async () => {
   if (process.type !== 'browser') throw new Error('Tamler requires the Electron main process');
   const module = process.getBuiltinModule('module');

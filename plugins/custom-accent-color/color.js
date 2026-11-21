@@ -79,11 +79,12 @@ function shiftScale(scale, baseKey, target) {
 // Подмешивает оттенок к серым: середина шкалы окрашивается сильнее, белый и чёрный почти не меняются.
 function tintScale(scale, target, amount) {
   if (!amount) return { ...scale };
-  const [, , H] = toOklch(target);
+  const [, C, H] = toOklch(target);
   const result = {};
   for (const [key, hex] of Object.entries(scale)) {
     const [L, a, b] = rgbToOklab(hexToRgb(hex));
-    const strength = 0.045 * (1 - (2 * L - 1) ** 2) * amount;
+    // У серого цвета оттенок — шум округления: такой цвет делает фон нейтральным, а не окрашивает его случайным оттенком.
+    const strength = C < 0.002 ? 0 : 0.045 * (1 - (2 * L - 1) ** 2) * amount;
     result[key] = rgbToHex(oklabToRgb([L, a * (1 - amount) + Math.cos(H) * strength, b * (1 - amount) + Math.sin(H) * strength]));
   }
   return result;

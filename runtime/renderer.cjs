@@ -607,7 +607,7 @@ async function installTamler(window, plugins, managerFactory, state = {}) {
     return request('storage-set', { id: plugin.id, key, value: data[key] ?? null, remove: value === undefined }).then(() => undefined);
   }
   const api = {
-    version: '0.6.0',
+    version: '0.7.3',
     errors,
     loadUI,
     providers,

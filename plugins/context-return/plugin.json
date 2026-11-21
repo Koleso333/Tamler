@@ -1,0 +1,20 @@
+{
+  "id": "context-return",
+  "name": "Context Return",
+  "description": "Shows a collapsible context usage bar above plan limits in Claude Code",
+  "version": "0.1.4",
+  "main": "index.js",
+  "matches": ["https://claude.ai/*"],
+  "patches": [
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/*/c82492f2c-*.js",
+      "find": "(?<![\\w$])([\\w$]+)=([\\w$]+)\\|\\|([\\w$]+)!==null,([\\w$]+)=\\3===null\\?([\\w$]+):null,(?=[\\w$]+=[\\w$]+\\(\\1\\?null:\\5\\?\\.id\\?\\?null\\))",
+      "replace": "$1=$2||($5==null&&$3!==null),$4=$5,"
+    },
+    {
+      "url": "https://assets-proxy.anthropic.com/claude-ai/*/c82492f2c-*.js",
+      "find": "children:([\\w$]+===null\\?)(?:([\\w$]+\\?[\\w$]+\\([\\w$]+,\\{sessionRef:[\\w$]+,modelId:[^{};]+\\}\\):))?([\\w$]+)\\(([\\w$]+),(\\{sessionRef:([\\w$]+),[^{};]*?plan:[\\w$]+\\?([\\w$]+):[^{};]*?contextCaption:[\\w$]+\\})\\):\\3\\(([\\w$]+),(\\{presence:[^{};]*\\})\\)",
+      "replace": "children:$1$2$3($4,$5):$6==null?$3($8,$9):[$3($4,{...$5,plan:$7,banner:void 0,creditSection:void 0,projectUsageLink:void 0,projectUsage:void 0,onSeeDetailedBreakdown:void 0,contextCaption:void 0},\"tamler-context\"),$3(\"div\",{className:\"mx-pad-lg my-xs h-px bg-alpha-2 first:hidden\",\"aria-hidden\":true},\"tamler-context-divider\"),$3($8,$9,\"tamler-plan\")]"
+    }
+  ]
+}

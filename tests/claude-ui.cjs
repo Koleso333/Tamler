@@ -24,7 +24,7 @@ async function verify(contents, root, api) {
   try {
     assert.ok(await evalUI('document.querySelector("nav[data-perf-region=settings_nav]")'));
     assert.equal(await evalUI('document.querySelectorAll("#customize-pane [data-tamler-manager], [role=tablist] [data-tamler-navigation]").length'), 0);
-    assert.equal(await evalUI('document.querySelector("[data-tamler-navigation-item]")?.nextElementSibling?.dataset.testid'), 'customize-skills-settings');
+    assert.match(await evalUI('document.querySelector("[data-tamler-navigation-item]")?.nextElementSibling?.dataset.testid'), /^customize-(connectors|skills|plugins)-settings$/);
     await api.command({ action: 'refresh' });
     await evalUI('window.Tamler.manager.open()');
     const card = '[...document.querySelectorAll("[data-tamler-manager] [data-cds=Card]")].find(e => e.textContent.includes("Tamler UI Check"))';

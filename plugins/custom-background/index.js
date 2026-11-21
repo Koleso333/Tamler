@@ -4,8 +4,29 @@
 // Лента своего фона не имеет, поэтому картинка видна сквозь неё. Но затемнения у краёв ленты и подложка
 // поля ввода залиты сплошным цветом и закрыли бы картинку: они прячутся, а текст у краёв растворяется маской.
 const FIT = { cover: 'cover', stretch: '100% 100%', height: 'auto 100%', width: '100% auto', original: 'auto' };
-// Обычный чат в окне Claude помечен data-frame-mode="cowork", как и Cowork.
-const MODES = { both: ':is([data-frame-mode="chat"], [data-frame-mode="cowork"], [data-frame-mode="code"])', chat: ':is([data-frame-mode="chat"], [data-frame-mode="cowork"])', code: '[data-frame-mode="code"]' };
+// Режим окна Claude держит в сторе сайдбара (resolvedMode ?? lastKnownMode — так его читает сам Claude).
+// До сборки f4083dc327 он дублировался в .dframe-root[data-frame-mode], теперь плагин пишет его в html[data-tamler-frame-mode].
+// Обычный чат в окне Claude идёт режимом "cowork", как и Cowork.
+const MODE_ATTRIBUTE = 'data-tamler-frame-mode';
+// "any" — режим не удалось узнать: картинка показывается везде.
+const mode = values => `:root:is(${values.concat('any').map(value => `[${MODE_ATTRIBUTE}="${value}"]`).join(', ')})`;
+const MODES = { both: mode(['chat', 'cowork', 'code']), chat: mode(['chat', 'cowork']), code: mode(['code']) };
+
+// Стор сайдбара (zustand) ищется по форме: в нём же живут interfaceFont и lastKnownMode.
+async function findModeStore(document) {
+  for (const link of document.querySelectorAll('link[rel="modulepreload"]')) {
+    let module;
+    try { module = await import(link.href); } catch { continue; }
+    for (const value of Object.values(module)) {
+      if (typeof value !== 'function' || typeof value.getState !== 'function' || typeof value.subscribe !== 'function') continue;
+      let state;
+      try { state = value.getState(); } catch { continue; }
+      if (state && 'lastKnownMode' in state && typeof state.setInterfaceFont === 'function') return value;
+    }
+  }
+  return null;
+}
+
 const TYPES = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif', avif: 'image/avif', bmp: 'image/bmp' };
 
 // Code: лента — виртуальная прокрутка, поле ввода лежит вне её. Затемнения: --epitaxy-top-fade-height и scroll-fade-size-[48px].
@@ -15,7 +36,7 @@ const CODE_BAND = '[class*="sticky bottom-0 bg-[var(--epitaxy-transcript-surface
 // Чат: поле ввода прилипает к низу внутри той же прокрутки, поэтому маска ставится на список сообщений,
 // а не на прокрутку. Затемнения: h-6 сверху и page-fade-b-soft (h-10) над полем ввода.
 const CHAT = { scroller: '[data-testid="chat-column-body"] > [class*="overflow-y-auto"]', list: '[data-testid="transcript-list"]', top: 24, bottom: 40 };
-const CHAT_DOCK = '[class*="in-data-cds-dock-masked:bg-page"]';
+const CHAT_DOCK = ':is([class~="in-data-cds-dock-masked:bg-ground"], [class~="in-data-cds-dock-masked:bg-page"])';
 // Подложка шапки Cowork заходит под шапку на -bottom-6.
 const HEADER_FADE = 24;
 
@@ -26,7 +47,20 @@ const BOTTOM = STEPS.slice().reverse().map(([share, color]) => `${color} calc(10
 const MASK = `linear-gradient(to bottom, ${TOP.concat(BOTTOM).join(', ')})`;
 const VARS = ['--tamler-bg-top', '--tamler-bg-bottom', '--tamler-bg-band', '--tamler-bg-y', '--tamler-bg-h'];
 
-module.exports.start = ({ window, signal, storage, files, options, mount, addStyle, cleanup, warn }) => {
+module.exports.start = ({ window, document, signal, storage, files, options, mount, addStyle, cleanup, warn }) => {
+  const root = document.documentElement;
+  findModeStore(document).then(store => {
+    if (signal.aborted) return;
+    if (!store) { warn('Window mode store not found; the background is shown in every mode'); root.setAttribute(MODE_ATTRIBUTE, 'any'); return; }
+    const sync = state => {
+      const value = state.resolvedMode ?? state.lastKnownMode;
+      if (typeof value === 'string' && root.getAttribute(MODE_ATTRIBUTE) !== value) root.setAttribute(MODE_ATTRIBUTE, value);
+    };
+    sync(store.getState());
+    cleanup(store.subscribe(sync));
+  });
+  cleanup(() => root.removeAttribute(MODE_ATTRIBUTE));
+
   const names = () => (Array.isArray(storage.get('images')) ? storage.get('images') : []).map(file => file.name);
   options('image', () => names().map(name => ({ value: name, label: name })));
 
@@ -50,7 +84,7 @@ module.exports.start = ({ window, signal, storage, files, options, mount, addSty
     if (!picture) { style.textContent = ''; return; }
     const fit = FIT[storage.get('fit')] || FIT.cover;
     const overlay = Math.min(100, Math.max(0, Number(storage.get('overlay')) || 0));
-    const frame = `.dframe-root${where}`;
+    const frame = `${where} .dframe-root`;
     const panel = `${frame} .epitaxy-chat-panel`;
     const chat = `${frame} [data-testid="chat-column-body"]`;
     const tint = `color-mix(in srgb, var(--df-bg-page, var(--cds-surface-1)) ${overlay}%, transparent)`;
@@ -60,6 +94,8 @@ module.exports.start = ({ window, signal, storage, files, options, mount, addSty
         background-image: linear-gradient(${tint}, ${tint}), url("${picture.url}");
         background-size: auto, ${fit}; background-position: center; background-repeat: no-repeat;
       }
+      /* Claude 3.x: плитки окна (.tiles-shell) залиты тем же цветом страницы поверх main. */
+      ${frame} > main.dframe-content .tiles-shell { background: transparent !important; }
       ${panel} .scroll-fade-strip-top, ${panel} .scroll-fade-strip-bottom, ${panel} ${CODE_BAND}, ${panel} [data-testid="pending-nav-scrim"] { visibility: hidden !important; }
       ${panel} [class*="group/approval-dock"] { background-color: transparent !important; }
       ${panel} ${CODE.scroller} { -webkit-mask-image: ${MASK}; mask-image: ${MASK}; }
@@ -79,8 +115,8 @@ module.exports.start = ({ window, signal, storage, files, options, mount, addSty
 
   async function load() {
     const name = storage.get('image');
-    if (picture?.name === name) { apply(); return; }
     const ticket = ++loading;
+    if (picture?.name === name) { apply(); return; }
     if (!name) { forget(); apply(); return; }
     try {
       const data = await files.read('images', name);
@@ -89,7 +125,7 @@ module.exports.start = ({ window, signal, storage, files, options, mount, addSty
       forget();
       picture = { name, url: window.URL.createObjectURL(new window.Blob([data], { type })) };
     } catch (error) {
-      if (ticket !== loading) return;
+      if (signal.aborted || ticket !== loading) return;
       warn(`Cannot read ${name}: ${error.message}`);
       forget();
     }

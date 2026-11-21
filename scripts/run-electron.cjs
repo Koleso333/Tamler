@@ -3,9 +3,16 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const electron = path.resolve(__dirname, '..', '.cache', 'electron', 'runtime', 'electron.exe');
-if (!fs.existsSync(electron)) {
-  console.error('Extract stock Electron 44.7.0 x64 into .cache/electron/runtime first');
+const root = path.resolve(__dirname, '..');
+const target = path.join(root, 'build', 'target.json');
+const cache = path.join(root, '.cache', 'electron');
+const version = fs.existsSync(target) ? JSON.parse(fs.readFileSync(target, 'utf8').replace(/^\uFEFF/, '')).electron : null;
+const electron = [
+  version && path.join(cache, version, 'runtime', 'electron.exe'),
+  path.join(cache, 'runtime', 'electron.exe')
+].find(candidate => candidate && fs.existsSync(candidate));
+if (!electron) {
+  console.error('Extract stock Electron x64 into .cache/electron/runtime first');
   process.exit(1);
 }
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'tamler-electron-'));

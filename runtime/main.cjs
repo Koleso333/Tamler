@@ -12,6 +12,9 @@ const ASSET_TYPES = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image
 const SETTING_TYPES = new Set(['boolean', 'number', 'string', 'select', 'list', 'files', 'color']);
 const HEX_COLOR = /^#[0-9a-f]{6}$/i;
 const FETCH_LIMIT = 32 * 1024 * 1024;
+// Сколько секунд после старта процесса Claude считается запуском приложения, а не горячей заменой ядра.
+const LAUNCH_WINDOW = 60;
+const CACHE_OFF = 30000;
 // Браузерный User-Agent: Google Fonts и подобные сервисы по нему выбирают формат (woff2).
 const FETCH_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36';
 
@@ -76,6 +79,8 @@ function validateSettings(settings) {
     if (!SETTING_TYPES.has(setting.type)) throw new Error(`Setting ${setting.key} has unsupported type`);
     const result = { key: setting.key, type: setting.type, label: String(setting.label || setting.key) };
     if (setting.description) result.description = String(setting.description);
+    // Блок настроек: менеджер выводит заголовок перед первой настройкой каждого блока.
+    if (setting.section) result.section = String(setting.section);
     // Без options варианты select даёт сам плагин через options(key, provider).
     if (setting.type === 'select') {
       if (setting.options !== undefined && !Array.isArray(setting.options)) throw new Error(`Setting ${setting.key} options must be an array`);
@@ -119,12 +124,35 @@ function hostAllowed(patterns, url) {
   });
 }
 
+// Правка исходника Claude: регулярное выражение по ответу сервера для скриптов с адресом по шаблону url.
+function validatePatches(patches) {
+  if (!Array.isArray(patches)) throw new Error('patches must be an array');
+  return patches.map(patch => {
+    if (!patch || typeof patch.url !== 'string' || !/^https:\/\/[^/]+\/.*$/.test(patch.url)) throw new Error('Each patch needs an https:// url pattern');
+    if (typeof patch.find !== 'string' || !patch.find || typeof patch.replace !== 'string') throw new Error('Each patch needs find and replace strings');
+    const flags = patch.flags === undefined ? '' : String(patch.flags);
+    if (!/^[gimsu]*$/.test(flags)) throw new Error(`Unsupported patch flags: ${flags}`);
+    new RegExp(patch.find, flags);
+    return { url: patch.url, find: patch.find, replace: patch.replace, flags };
+  });
+}
+
+function applyPatches(source, patches) {
+  const results = [];
+  for (const patch of patches) {
+    const next = source.replace(new RegExp(patch.find, patch.flags), patch.replace);
+    results.push({ plugin: patch.plugin, find: patch.find, applied: next !== source });
+    source = next;
+  }
+  return { source, results };
+}
+
 function broken(folder, id, error) {
-  return { id, name: path.basename(folder), description: '', version: '', folder, enabled: false, css: '', cssPath: '', main: '', modules: {}, assets: {}, settings: [], matches: [], hosts: [], error };
+  return { id, name: path.basename(folder), description: '', version: '', folder, enabled: false, css: '', cssPath: '', main: '', modules: {}, assets: {}, settings: [], matches: [], hosts: [], patches: [], error };
 }
 
 function loadPlugin(folder, manifest) {
-  const plugin = { id: manifest.id, name: manifest.name || manifest.id, description: manifest.description || '', version: manifest.version || '', folder, enabled: manifest.enabled, css: '', cssPath: '', main: '', modules: {}, assets: {}, settings: [], matches: [], hosts: [] };
+  const plugin = { id: manifest.id, name: manifest.name || manifest.id, description: manifest.description || '', version: manifest.version || '', folder, enabled: manifest.enabled, css: '', cssPath: '', main: '', modules: {}, assets: {}, settings: [], matches: [], hosts: [], patches: [] };
   try {
     if (manifest.matches !== undefined) {
       if (!Array.isArray(manifest.matches) || manifest.matches.some(pattern => typeof pattern !== 'string' || !pattern)) throw new Error('matches must be an array of URL patterns');
@@ -136,6 +164,7 @@ function loadPlugin(folder, manifest) {
       plugin.hosts = manifest.hosts;
     }
     plugin.settings = validateSettings(manifest.settings);
+    if (manifest.patches !== undefined) plugin.patches = validatePatches(manifest.patches);
     if (manifest.css) {
       plugin.cssPath = inside(folder, manifest.css);
       plugin.css = fs.readFileSync(path.join(folder, plugin.cssPath), 'utf8');
@@ -151,6 +180,7 @@ function loadPlugin(folder, manifest) {
     plugin.enabled = false;
     plugin.modules = {};
     plugin.assets = {};
+    plugin.patches = [];
   }
   return plugin;
 }
@@ -181,7 +211,14 @@ function loadPlugins(directory) {
 // Код плагинов вставляется литералами функций: страница не вызывает eval, CSP приложения не меняется.
 function serializePlugins(plugins, data) {
   const modules = entries => Object.entries(entries).map(([name, module]) => `${JSON.stringify(name)}: ${'source' in module ? `{ create: function(module, exports, Tamler, require) {\n${module.source}\n} }` : JSON.stringify(module)}`).join(',');
-  return plugins.map(({ modules: entries, folder, ...plugin }) => `({ ...${JSON.stringify({ ...plugin, data: plugin.error ? {} : data(plugin.id) })}, modules: { ${plugin.error ? '' : modules(entries)} } })`).join(',');
+  return plugins.map(({ modules: entries, folder, patches, ...plugin }) => `({ ...${JSON.stringify({ ...plugin, data: plugin.error ? {} : data(plugin.id) })}, modules: { ${plugin.error ? '' : modules(entries)} } })`).join(',');
+}
+
+// Сеть Claude идёт через системный прокси, а fetch из Node — напрямую и там, где прямой доступ закрыт, падает.
+// Поэтому качаем через сессию страницы (её прокси и сертификаты), а Node fetch остаётся запасным путём.
+function sessionFetch(contents, url, init) {
+  const session = contents && !contents.isDestroyed() ? contents.session : null;
+  return typeof session?.fetch === 'function' ? session.fetch(url, init) : fetch(url, init);
 }
 
 function start(electron,root = path.resolve(__dirname, '..')) {
@@ -196,8 +233,19 @@ function start(electron,root = path.resolve(__dirname, '..')) {
   const entries = plugins => serializePlugins(plugins, store.data);
   const state = () => ({ paused: store.paused() });
   const pages = () => [...attached.values()].map(({ contents }) => contents).filter(contents => !contents.isDestroyed() && allowed(contents.getURL()));
+  // Правки исходников включённых плагинов. Применяются при загрузке скрипта, поэтому новые вступают в силу после перезагрузки страницы.
+  let patches = [];
+  const patched = new Map();
+  const collectPatches = plugins => {
+    patches = store.paused() ? [] : plugins.filter(plugin => plugin.enabled && !plugin.error).flatMap(plugin => (plugin.patches || []).map(patch => ({ ...patch, plugin: plugin.id })));
+  };
+  // В шаблонах CDP * и ? — подстановки, а \ экранирует; точная проверка адреса — hostAllowed.
+  // Стадия запроса — до HTTP-кэша страницы: закэшированный или подгруженный через modulepreload скрипт тоже попадает сюда.
+  const fetchPatterns = () => [...new Set(patches.map(patch => patch.url))].map(url => ({ urlPattern: url.replace(/[\\?]/g, '\\$&'), requestStage: 'Request' }));
   async function syncPlugins() {
     const plugins = store.list();
+    collectPatches(plugins);
+    await Promise.all([...attached.values()].map(({ contents }) => intercept(contents)));
     await Promise.all(pages().map(contents => contents.executeJavaScript(`window.Tamler?.update([${entries(plugins)}], ${JSON.stringify(state())})`)));
   }
   async function command(request, origin) {
@@ -224,7 +272,7 @@ function start(electron,root = path.resolve(__dirname, '..')) {
     if (request.action === 'file-get') return { ok: true, data: store.readFile(request.id, request.key, request.name).toString('base64') };
     if (request.action === 'net-fetch') {
       if (!hostAllowed(store.hostsOf(request.id), request.url)) throw new Error(`Host is not listed in plugin hosts: ${request.url}`);
-      const response = await fetch(request.url, { headers: { 'user-agent': FETCH_AGENT }, redirect: 'follow', signal: AbortSignal.timeout(60000) });
+      const response = await sessionFetch(origin, request.url, { headers: { 'user-agent': FETCH_AGENT }, redirect: 'follow', signal: AbortSignal.timeout(60000) });
       if (!hostAllowed(store.hostsOf(request.id), response.url)) throw new Error(`Redirect to an unlisted host: ${response.url}`);
       const body = Buffer.from(await response.arrayBuffer());
       if (body.length > FETCH_LIMIT) throw new Error('Response is larger than 32 MB');
@@ -241,13 +289,43 @@ function start(electron,root = path.resolve(__dirname, '..')) {
     if (request.action !== 'open-folder') await syncPlugins();
     return { ok: true };
   }
-  async function bind(contents) {
+  async function patchResponse(contents, params) {
+    const send = (method, args) => contents.debugger.sendCommand(method, { requestId: params.requestId, ...args });
+    try {
+      const matching = patches.filter(patch => hostAllowed([patch.url], params.request.url));
+      if (!matching.length || params.request.method !== 'GET') return await send('Fetch.continueRequest');
+      // Скрипт качается здесь, а не берётся из ответа страницы: так правка не зависит от её кэша.
+      const response = await sessionFetch(contents, params.request.url, { headers: { 'user-agent': FETCH_AGENT }, signal: AbortSignal.timeout(30000) });
+      if (!response.ok) {
+        log({ event: 'patch-skip', url: params.request.url, status: response.status });
+        return await send('Fetch.continueRequest');
+      }
+      const original = await response.text();
+      const { source, results } = applyPatches(original, matching);
+      patched.set(params.request.url, results);
+      log({ event: 'patch', url: params.request.url, results });
+      if (source === original) return await send('Fetch.continueRequest');
+      // Модули грузятся с CORS: разрешаем ровно тот origin, что прислала страница.
+      const origin = Object.entries(params.request.headers || {}).find(([name]) => name.toLowerCase() === 'origin')?.[1];
+      const responseHeaders = [
+        { name: 'Content-Type', value: response.headers.get('content-type') || 'text/javascript; charset=utf-8' },
+        { name: 'Cache-Control', value: 'no-store' },
+        ...(origin ? [{ name: 'Access-Control-Allow-Origin', value: origin }, { name: 'Access-Control-Allow-Credentials', value: 'true' }, { name: 'Vary', value: 'Origin' }] : [])
+      ];
+      await send('Fetch.fulfillRequest', { responseCode: 200, responseHeaders, body: Buffer.from(source).toString('base64') });
+    } catch (error) {
+      log({ event: 'patch-error', url: params.request.url, message: error.message });
+      await send('Fetch.continueRequest').catch(() => {});
+    }
+  }
+  function connect(contents) {
     if (!bindings.has(contents.id)) {
       const own = !contents.debugger.isAttached();
       if (own) contents.debugger.attach('1.3');
       const contexts = new Map();
-      const state = { contents, own, contexts, frameId: null };
+      const state = { contents, own, contexts, frameId: null, fetching: false };
       const listener = async (_event, method, params) => {
+        if (method === 'Fetch.requestPaused') { void patchResponse(contents, params); return; }
         if (method === 'Runtime.executionContextCreated') {
           contexts.set(params.context.id, params.context.auxData);
           return;
@@ -270,6 +348,22 @@ function start(electron,root = path.resolve(__dirname, '..')) {
       state.listener = listener;
       bindings.set(contents.id, state);
     }
+    return bindings.get(contents.id);
+  }
+  // Перехват включается сразу при создании страницы, чтобы успеть к первой загрузке скриптов.
+  async function intercept(contents) {
+    if (contents.isDestroyed()) return;
+    const patterns = fetchPatterns();
+    if (!patterns.length && !bindings.get(contents.id)?.fetching) return;
+    try {
+      const state = connect(contents);
+      await contents.debugger.sendCommand(patterns.length ? 'Fetch.enable' : 'Fetch.disable', patterns.length ? { patterns } : undefined);
+      if (state.fetching !== patterns.length > 0) log({ event: 'intercept', id: contents.id, url: contents.getURL(), patterns: patterns.length });
+      state.fetching = patterns.length > 0;
+    } catch (error) { log({ event: 'intercept-error', id: contents.id, message: error.message }); }
+  }
+  async function bind(contents) {
+    connect(contents);
     const tree = await contents.debugger.sendCommand('Page.getFrameTree');
     bindings.get(contents.id).frameId = tree.frameTree.frame.id;
     await contents.debugger.sendCommand('Runtime.enable');
@@ -286,6 +380,8 @@ function start(electron,root = path.resolve(__dirname, '..')) {
     try {
       await bind(contents);
       const plugins = store.list();
+      collectPatches(plugins);
+      await intercept(contents);
       delete require.cache[require.resolve('./renderer.cjs')];
       delete require.cache[require.resolve('./manager.cjs')];
       const { installTamler } = require('./renderer.cjs');
@@ -304,7 +400,8 @@ function start(electron,root = path.resolve(__dirname, '..')) {
     const onReady = () => void inject(contents);
     contents.on('dom-ready', onReady);
     attached.set(contents.id, { contents, onReady });
-    contents.once('destroyed', () => attached.delete(contents.id));
+    contents.once('destroyed', () => { attached.delete(contents.id); bindings.delete(contents.id); });
+    void intercept(contents);
     if (!contents.isLoadingMainFrame()) onReady();
     // Ядро могло подключиться между dom-ready и концом загрузки: тогда dom-ready уже не повторится.
     else contents.once('did-stop-loading', () => { if (attached.get(contents.id)?.onReady === onReady) onReady(); });
@@ -336,8 +433,9 @@ function start(electron,root = path.resolve(__dirname, '..')) {
         if (allowed(contents.getURL())) await contents.executeJavaScript('window.Tamler?.dispose()').catch(() => {});
       }
       attached.clear();
-      for (const { contents, listener, own } of bindings.values()) {
+      for (const { contents, listener, own, fetching } of bindings.values()) {
         if (contents.isDestroyed()) continue;
+        if (fetching) await contents.debugger.sendCommand('Fetch.disable').catch(() => {});
         await contents.debugger.sendCommand('Runtime.removeBinding', { name: '__tamlerBridge' }).catch(() => {});
         contents.debugger.removeListener('message', listener);
         if (own && contents.debugger.isAttached()) contents.debugger.detach();
@@ -347,6 +445,29 @@ function start(electron,root = path.resolve(__dirname, '..')) {
       log({ event: 'disposed' });
     }
   };
+  // Окно Claude начинает грузиться раньше, чем подключается Tamler, и его скрипты уже выполнены без правок.
+  // Такие страницы перезагружаются с включённым перехватом: при запуске приложения сами, позже — командой patch-reload.
+  // Обычная перезагрузка берёт уже загруженные скрипты из памяти страницы мимо перехвата. Поэтому кэш выключается
+  // на время, пока подгружаются ленивые чанки (они импортируются и после события load, где жёсткая перезагрузка уже не действует).
+  async function patchReload(list) {
+    const reloaded = [];
+    for (const contents of list) {
+      if (contents.isDestroyed() || !/^https:\/\/claude\.ai\//.test(contents.getURL())) continue;
+      await intercept(contents);
+      try {
+        await contents.debugger.sendCommand('Network.enable');
+        await contents.debugger.sendCommand('Network.setCacheDisabled', { cacheDisabled: true });
+        setTimeout(() => {
+          if (contents.isDestroyed() || !contents.debugger.isAttached()) return;
+          contents.debugger.sendCommand('Network.setCacheDisabled', { cacheDisabled: false }).then(() => contents.debugger.sendCommand('Network.disable')).catch(() => {});
+        }, CACHE_OFF).unref?.();
+      } catch (error) { log({ event: 'intercept-error', id: contents.id, message: error.message }); }
+      log({ event: 'patch-reload', id: contents.id, uptime: process.uptime() });
+      contents.reloadIgnoringCache();
+      reloaded.push(contents.id);
+    }
+    return reloaded;
+  }
   const server = net.createServer(socket => {
     socket.setEncoding('utf8');
     socket.setTimeout(5000, () => socket.destroy());
@@ -362,7 +483,7 @@ function start(electron,root = path.resolve(__dirname, '..')) {
         if (request.action === 'reload') socket.end(JSON.stringify({ ok: true, results: await api.reload() }) + '\n');
         else if (request.action === 'upgrade') socket.end(JSON.stringify({ ok: true, results: await api.upgrade() }) + '\n');
         else if (['toggle', 'pause', 'remove', 'refresh'].includes(request.action)) socket.end(JSON.stringify(await command(request)) + '\n');
-        else if (request.action === 'status') socket.end(JSON.stringify({ ok: true, pid: process.pid, paused: store.paused(), plugins: store.list().map(({ modules, assets, css, folder, ...plugin }) => plugin) }) + '\n');
+        else if (request.action === 'status') socket.end(JSON.stringify({ ok: true, pid: process.pid, paused: store.paused(), plugins: store.list().map(({ modules, assets, css, folder, ...plugin }) => plugin), patched: Object.fromEntries(patched) }) + '\n');
         else if (request.action === 'show-manager') {
           const page = [...attached.values()].map(entry => entry.contents).find(contents => !contents.isDestroyed() && contents.getURL().startsWith('https://claude.ai'));
           if (page && !await page.executeJavaScript('!!document.querySelector("[role=dialog][data-open] nav[data-perf-region=settings_nav]")')) {
@@ -401,6 +522,10 @@ function start(electron,root = path.resolve(__dirname, '..')) {
           const results = await require(testPath).verify(contents, root, api);
           socket.end(JSON.stringify({ ok: true, results }) + '\n');
         }
+        else if (request.action === 'patch-reload') {
+          if (!patches.length) throw new Error('No enabled plugin has source patches');
+          socket.end(JSON.stringify({ ok: true, reloaded: await patchReload([...attached.values()].map(entry => entry.contents)) }) + '\n');
+        }
         else if (request.action === 'dispose') { await api.dispose(); socket.end(JSON.stringify({ ok: true }) + '\n'); }
         else socket.end(JSON.stringify({ ok: false, error: 'Unknown action' }) + '\n');
       } catch (error) { socket.end(JSON.stringify({ ok: false, error: error.message }) + '\n'); }
@@ -414,12 +539,17 @@ function start(electron,root = path.resolve(__dirname, '..')) {
   server.listen(`\\\\.\\pipe\\tamler-${process.pid}`);
   server.unref();
   globalThis.__tamlerMain = api;
-  api.ready = app.whenReady().then(() => {
-    for (const contents of webContents.getAllWebContents()) attach(contents);
+  collectPatches(store.list());
+  api.ready = app.whenReady().then(async () => {
+    const existing = webContents.getAllWebContents();
+    for (const contents of existing) attach(contents);
     log({ event: 'main-ready', electron: process.versions.electron, pid: process.pid });
+    // Сразу после запуска приложения (не при upgrade) страницы Claude один раз перезагружаются с перехватом.
+    if (!patches.length || process.uptime() > LAUNCH_WINDOW) return;
+    await patchReload(existing);
   });
   return api;
 }
 
-module.exports = { start, loadPlugins, serializePlugins, hostAllowed };
+module.exports = { start, loadPlugins, serializePlugins, hostAllowed, applyPatches, sessionFetch };
 

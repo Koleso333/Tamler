@@ -1,7 +1,7 @@
 const net = require('node:net');
 const [pid, action = 'reload', payload = '{}'] = process.argv.slice(2);
-if (!/^\d+$/.test(pid || '') || !['reload', 'dispose', 'upgrade', 'status', 'toggle', 'pause', 'remove', 'refresh', 'show-manager', 'ui-status', 'capture', 'verify-ui', 'sources'].includes(action)) {
-  console.error('Usage: node scripts/control.cjs PID [reload|dispose|upgrade|status|toggle|remove|refresh] [JSON]');
+if (!/^\d+$/.test(pid || '') || !['reload', 'dispose', 'upgrade', 'status', 'toggle', 'pause', 'remove', 'refresh', 'show-manager', 'ui-status', 'capture', 'verify-ui', 'sources', 'patch-reload'].includes(action)) {
+  console.error('Usage: node scripts/control.cjs PID [reload|dispose|upgrade|status|toggle|remove|refresh|patch-reload] [JSON]');
   process.exit(1);
 }
 const socket = net.createConnection(`\\\\.\\pipe\\tamler-${pid}`);

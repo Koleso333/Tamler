@@ -2,14 +2,14 @@
   "id": "custom-background",
   "name": "Custom Background",
   "description": "Your own picture behind the messages in Chat, Cowork and Code",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "main": "index.js",
   "matches": ["https://claude.ai/*"],
   "settings": [
     { "key": "images", "type": "files", "label": "Images", "description": "PNG, JPG, WEBP, GIF, AVIF or BMP.", "accept": ".png,.jpg,.jpeg,.webp,.gif,.avif,.bmp" },
     { "key": "image", "type": "select", "label": "Background", "description": "Which uploaded image is shown", "placeholder": "Upload an image first" },
     { "key": "where", "type": "select", "label": "Show in", "default": "both", "options": [
-      { "value": "both", "label": "Chat and Code" },
+      { "value": "both", "label": "Chat, Cowork and Code" },
       { "value": "chat", "label": "Chat and Cowork" },
       { "value": "code", "label": "Code" }
     ] },

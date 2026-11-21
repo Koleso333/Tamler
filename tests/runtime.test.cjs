@@ -67,7 +67,7 @@ test('settings and URL patterns are validated from the manifest', t => {
   plugin(root, 'ok', { id: 'ok', main: 'index.js', matches: ['https://claude.ai/*'], settings: [
     { key: 'size', type: 'number', default: 14, min: 10 },
     { key: 'mode', type: 'select', options: ['a', { value: 'b', label: 'B' }] },
-    { key: 'picked', type: 'select', placeholder: 'Upload first' }
+    { key: 'picked', type: 'select', placeholder: 'Upload first', section: 'Advanced' }
   ] });
   plugin(root, 'bad-type', { id: 'bad-type', settings: [{ key: 'x', type: 'date' }] });
   plugin(root, 'bad-matches', { id: 'bad-matches', matches: 'claude.ai' });
@@ -78,6 +78,8 @@ test('settings and URL patterns are validated from the manifest', t => {
   assert.equal(ok.settings[0].min, 10);
   assert.deepEqual(ok.settings[2].options, []);
   assert.equal(ok.settings[2].placeholder, 'Upload first');
+  assert.equal(ok.settings[2].section, 'Advanced');
+  assert.equal('section' in ok.settings[0], false);
   assert.match(entries.find(entry => entry.id === 'bad-type').error, /unsupported type/);
   assert.match(entries.find(entry => entry.id === 'bad-matches').error, /matches/);
 });
@@ -149,6 +151,68 @@ test('custom accent color plugin builds a palette only for changed colors', () =
   assert.match(buildCss({ accent: '#d4a017', brand: '#d97757', tint: 0 }), /--cds-role-accent-on: #0b0b0b;/);
 });
 
+test('context return keeps the native breakdown collapsed above the Code usage limits', () => {
+  const { start } = require('../plugins/context-return/index.js');
+  const inline = props => props.presentation === 'inline' && props.contextOnly;
+  const component = { type: inline };
+  const sessionRef = { id: 'session-1', type: 'local' };
+  const contextFiber = { type: inline, elementType: component, memoizedProps: { sessionRef, modelId: 'current' } };
+  const planFiber = { memoizedProps: { presence: { kind: 'meters' }, rows: [], errorAction: null }, return: contextFiber };
+  const events = [];
+  const readout = { dataset: { railContextPct: '18' }, textContent: '36k / 200k (18%)' };
+  const createElement = tag => ({
+    tag, dataset: {}, style: {}, children: [], open: false,
+    append(...children) { this.children.push(...children); },
+    setAttribute() {},
+    querySelector: selector => selector === '[data-rail-context-summary]' ? readout : null,
+    remove() { events.push('remove'); }
+  });
+  let host;
+  const section = { before(node) { host = node; events.push('insert'); } };
+  const group = { parentElement: section, '__reactFiber$fixture': planFiber };
+  let mountGroup;
+  let syncSummary;
+
+  start({
+    document: { createElement },
+    window: { MutationObserver: class {
+      constructor(callback) { syncSummary = callback; }
+      observe() {}
+      disconnect() { events.push('disconnect'); }
+    } },
+    addStyle: css => assert.match(css, /data-tamler-context-return/),
+    mount: (selector, callback) => { assert.match(selector, /epitaxy-root/); mountGroup = callback; },
+    render: (node, view, options) => {
+      assert.equal(node, host.children[1]);
+      assert.equal(options.context, group);
+      const { type, props } = view({ React: { createElement: (type, props) => ({ type, props }) } });
+      assert.equal(type, component);
+      assert.equal(type.type(props), true);
+      assert.equal(props.sessionRef, sessionRef);
+      assert.equal(props.modelId, 'current');
+      events.push('render');
+      return { unmount() { events.push('unmount'); } };
+    }
+  });
+
+  assert.equal(mountGroup({ ...group, '__reactFiber$fixture': contextFiber }), undefined);
+  assert.equal(mountGroup({ ...group, '__reactFiber$fixture': {
+    memoizedProps: { children: [{ key: 'tamler-context' }] }, return: planFiber
+  } }), undefined);
+  assert.deepEqual(events, []);
+  const cleanup = mountGroup(group);
+  assert.deepEqual(events, ['insert', 'render']);
+  assert.equal(host.tag, 'details');
+  assert.equal(host.open, false);
+  const [summary] = host.children;
+  assert.equal(summary.tag, 'summary');
+  syncSummary();
+  assert.equal(summary.children[1].textContent, '36k / 200k (18%)');
+  assert.equal(summary.children[2].children[0].style.width, '18%');
+  cleanup();
+  assert.deepEqual(events, ['insert', 'render', 'disconnect', 'unmount', 'remove']);
+});
+
 test('plugin hosts match host and path separately', () => {
   const { hostAllowed } = require('../runtime/main.cjs');
   const patterns = ['https://fonts.google.com/metadata/*', 'https://*.gstatic.com/*'];
@@ -157,6 +221,39 @@ test('plugin hosts match host and path separately', () => {
   assert.equal(hostAllowed(patterns, 'https://evil.com/x.gstatic.com/a'), false);
   assert.equal(hostAllowed(patterns, 'https://fonts.google.com/other'), false);
   assert.equal(hostAllowed(patterns, 'http://fonts.gstatic.com/a'), false);
+});
+
+test('source patches are validated and applied in order', t => {
+  const { applyPatches } = require('../runtime/main.cjs');
+  const root = directory(t);
+  const url = 'https://assets.example.com/*/chunk-*.js';
+  plugin(root, 'good', { id: 'good', patches: [{ url, find: 'return (\\w+)\\?"a":"b"', replace: 'return"b"' }, { url, find: 'b"', replace: 'c"', flags: 'g' }] });
+  plugin(root, 'regex', { id: 'regex', patches: [{ url, find: '(', replace: '' }] });
+  plugin(root, 'flags', { id: 'flags', patches: [{ url, find: 'x', replace: '', flags: 'y' }] });
+  plugin(root, 'http', { id: 'http', patches: [{ url: 'http://assets.example.com/*', find: 'x', replace: '' }] });
+  const entries = loadPlugins(root);
+  const good = entries.find(entry => entry.id === 'good');
+  assert.equal(good.error, undefined);
+  for (const id of ['regex', 'flags', 'http']) assert.ok(entries.find(entry => entry.id === id).error, id);
+  const { source, results } = applyPatches('function f(e){return e?"a":"b"}', good.patches);
+  assert.equal(source, 'function f(e){return"c"}');
+  assert.deepEqual(results.map(result => result.applied), [true, true]);
+  assert.deepEqual(applyPatches('nothing', good.patches).results.map(result => result.applied), [false, false]);
+});
+
+test('runtime downloads through the page session so the system proxy applies', async t => {
+  const { sessionFetch } = require('../runtime/main.cjs');
+  const calls = [];
+  const contents = { isDestroyed: () => false, session: { fetch: async (url, init) => { calls.push([url, init]); return 'session'; } } };
+  const init = { headers: { 'user-agent': 'x' } };
+  assert.equal(await sessionFetch(contents, 'https://assets.example.com/a.js', init), 'session');
+  assert.deepEqual(calls, [['https://assets.example.com/a.js', init]]);
+  const original = globalThis.fetch;
+  t.after(() => { globalThis.fetch = original; });
+  globalThis.fetch = async () => 'node';
+  assert.equal(await sessionFetch({ isDestroyed: () => true, session: contents.session }, 'https://assets.example.com/a.js'), 'node');
+  assert.equal(await sessionFetch(undefined, 'https://assets.example.com/a.js'), 'node');
+  assert.equal(calls.length, 1);
 });
 
 test('custom fonts plugin reads family, weight and style from font files', async () => {

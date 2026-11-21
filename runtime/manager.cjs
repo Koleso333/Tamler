@@ -1,4 +1,20 @@
 function installManager(window, api, request) {
+  // Функция уходит в страницу через toString(), поэтому всё, что ей нужно, объявлено внутри.
+  const CUSTOMIZE_ITEMS = ['connectors', 'skills', 'plugins'].map(name => `li[data-testid="customize-${name}-settings"]`).join(', ');
+  // Классы состояния строк меню Settings: старое меню и новое (hit-row) отличаются только ими.
+  const NAVIGATION_STATES = [
+    'text-secondary text-secondary-control hover:bg-fill-ghost-hover hover:text-primary',
+    'bg-fill-ghost-selected font-medium text-primary'
+  ].map(classes => classes.split(' '));
+  const LEGACY_NAVIGATION = 'flex h-control w-full items-center gap-sm rounded px-sm text-left text-body cursor-pointer';
+
+  // Классы строки меню в нужном состоянии: основа берётся у самой строки (или у образца), состояние — своё.
+  function navigationClass(element, active) {
+    const base = (element?.getAttribute('class') || LEGACY_NAVIGATION).split(/\s+/).filter(name => name && !NAVIGATION_STATES.flat().includes(name));
+    const legacy = !base.includes('hit-row');
+    const state = active ? NAVIGATION_STATES[1] : legacy ? ['text-secondary', 'hover:bg-fill-ghost-hover', 'hover:text-primary'] : ['text-secondary-control', 'hover:bg-fill-ghost-hover', 'hover:text-primary'];
+    return [...base, ...state].join(' ');
+  }
   const document = window.document;
   let disposed = false;
   let opened = false;
@@ -33,7 +49,7 @@ function installManager(window, api, request) {
       button.removeAttribute('data-active');
       button.setAttribute('aria-selected', 'false');
       button.removeAttribute('aria-current');
-      if (button.getAttribute('role') !== 'tab') button.className = 'flex h-control w-full items-center gap-sm rounded px-sm text-left text-body cursor-pointer text-secondary hover:bg-fill-ghost-hover hover:text-primary';
+      if (button.getAttribute('role') !== 'tab') button.className = navigationClass(button, false);
     }
   }
   function restore() {
@@ -74,14 +90,14 @@ function installManager(window, api, request) {
         if (original.hasAttribute('aria-current')) original.removeAttribute('aria-current');
         if (original.hasAttribute('data-active')) original.removeAttribute('data-active');
         if (original.getAttribute('aria-selected') !== 'false') original.setAttribute('aria-selected', 'false');
-        if (original.getAttribute('role') !== 'tab') original.className = 'flex h-control w-full items-center gap-sm rounded px-sm text-left text-body cursor-pointer text-secondary hover:bg-fill-ghost-hover hover:text-primary';
+        if (original.getAttribute('role') !== 'tab') original.className = navigationClass(original, false);
       }
       if (button.getAttribute('role') === 'tab') {
         if (!button.hasAttribute('data-active')) button.setAttribute('data-active', '');
         if (button.getAttribute('aria-selected') !== 'true') button.setAttribute('aria-selected', 'true');
       } else {
         if (button.getAttribute('aria-current') !== 'page') button.setAttribute('aria-current', 'page');
-        button.className = 'flex h-control w-full items-center gap-sm rounded px-sm text-left text-body cursor-pointer bg-fill-ghost-selected font-medium text-primary';
+        button.className = navigationClass(button, true);
       }
     }
   }
@@ -302,7 +318,9 @@ function installManager(window, api, request) {
                     h(ui.Button, { variant: 'ghost', icon: 'Trash', iconOnly: true, tooltip: false, 'aria-label': `Delete ${plugin.name}`, disabled: busy, onClick: () => { setPending(plugin); setConfirming(true); } }))),
                 plugin.settings.length > 0 && !plugin.error && h(Expand, { open: expanded === plugin.id },
                   h('div', { className: 'mt-2 border-t border-border-300 pt-2' },
-                    plugin.settings.map(setting => h(SettingField, { key: setting.key, plugin, setting, onError: setError, onOpenChange: open => setRaised(current => open ? plugin.id : current === plugin.id ? null : current) })))))),
+                    plugin.settings.map((setting, index) => h(ui.React.Fragment, { key: setting.key },
+                      setting.section && setting.section !== plugin.settings[index - 1]?.section && h('h3', { className: 'text-sm font-medium text-primary', style: { paddingTop: index ? 16 : 4, paddingBottom: 2 } }, setting.section),
+                      h(SettingField, { plugin, setting, onError: setError, onOpenChange: open => setRaised(current => open ? plugin.id : current === plugin.id ? null : current) }))))))),
               !items.length && h('p', { className: 'text-body text-secondary py-8' }, 'No plugins installed. Open the plugins folder to add one.'))),
           h(ui.Confirm, { open: confirming, onOpenChange: setConfirming, title: `Delete ${pending?.name || 'plugin'}?`, description: 'The plugin will be disabled and removed from Tamler.', confirmLabel: 'Delete', cancelLabel: 'Cancel', confirmVariant: 'danger', initialFocus: 'cancel', onConfirm: async () => { if (await action('remove', { id: pending.id })) setConfirming(false); } }));
       }
@@ -345,11 +363,13 @@ function installManager(window, api, request) {
       if (!pane) { opened = false; api.managerOpen = false; }
     }
     if (!pane) return;
-    const skills = [...settingsNavigation.querySelectorAll('li[data-testid="customize-skills-settings"] > button')];
-    for (const skill of skills) {
-      const parent = skill.closest('ul');
-      if (parent.querySelector('[data-tamler-navigation]')) continue;
-      const connector = parent.querySelector('li[data-testid="customize-connectors-settings"] > button');
+    // \u041F\u0443\u043D\u043A\u0442 Tamler \u0441\u0442\u0430\u0432\u0438\u0442\u0441\u044F \u043F\u0440\u044F\u043C\u043E \u043D\u0430\u0434 Customize. \u0412 \u043D\u043E\u0432\u043E\u043C \u043C\u0435\u043D\u044E Customize \u2014 \u043E\u0434\u043D\u0430 \u0441\u0442\u0440\u043E\u043A\u0430 (\u0435\u0451 li \u043D\u043E\u0441\u0438\u0442 testid \u043F\u0435\u0440\u0432\u043E\u0433\u043E
+    // \u0441\u0443\u0449\u0435\u0441\u0442\u0432\u0443\u044E\u0449\u0435\u0433\u043E \u0440\u0430\u0437\u0434\u0435\u043B\u0430 \u0433\u0440\u0443\u043F\u043F\u044B), \u0432 \u0441\u0442\u0430\u0440\u043E\u043C \u2014 \u043E\u0442\u0434\u0435\u043B\u044C\u043D\u044B\u0435 \u0441\u0442\u0440\u043E\u043A\u0438 Connectors/Skills/Plugins; \u0431\u0435\u0440\u0451\u043C \u043F\u0435\u0440\u0432\u0443\u044E \u0438\u0437 \u043D\u0438\u0445 \u0432 \u0441\u043F\u0438\u0441\u043A\u0435.
+    const anchors = [...settingsNavigation.querySelectorAll(CUSTOMIZE_ITEMS)];
+    for (const parent of new Set(anchors.map(anchor => anchor.closest('ul')))) {
+      if (!parent || parent.querySelector('[data-tamler-navigation]')) continue;
+      const anchorItem = [...parent.children].find(child => child.matches(CUSTOMIZE_ITEMS));
+      const connector = anchorItem?.querySelector(':scope > button');
       if (!connector) continue;
       currentNavigation = connector;
       const button = connector.cloneNode(true);
@@ -358,18 +378,35 @@ function installManager(window, api, request) {
       button.removeAttribute('data-active');
       button.removeAttribute('data-composite-item-active');
       button.removeAttribute('aria-current');
+      button.removeAttribute('disabled');
       button.dataset.tamlerNavigation = '';
       button.setAttribute('aria-selected', 'false');
-      const icon = button.querySelector('[data-cds="Icon"]') || document.createElement('span');
-      icon.dataset.cds = 'Icon';
-      icon.className = 'shrink-0 text-secondary';
-      icon.style.fontSize = 'calc(1.25rem * var(--cds-rem-scale, 1))';
-      icon.style.fontWeight = '433.3';
+      const sourceIcon = connector.querySelector('svg, [data-cds="Icon"]');
+      let icon;
+      if (!sourceIcon || sourceIcon.matches('[data-cds="Icon"]:not(svg)')) {
+        icon = document.createElement('span');
+        icon.dataset.cds = 'Icon';
+        icon.className = sourceIcon?.getAttribute('class') || 'shrink-0 text-secondary';
+        icon.style.fontSize = 'calc(1.25rem * var(--cds-rem-scale, 1))';
+        icon.style.fontWeight = '433.3';
+        icon.textContent = '\uE055';
+      } else {
+        // \u0418\u043A\u043E\u043D\u043A\u0438 \u043C\u0435\u043D\u044E \u0442\u0435\u043F\u0435\u0440\u044C SVG: \u0440\u0438\u0441\u0443\u0435\u043C \u0441\u0432\u043E\u044E (\u043A\u0443\u0441\u043E\u0447\u0435\u043A \u043F\u0430\u0437\u043B\u0430) \u0442\u043E\u0433\u043E \u0436\u0435 \u0440\u0430\u0437\u043C\u0435\u0440\u0430 \u0438 \u0446\u0432\u0435\u0442\u0430, \u0447\u0442\u043E \u0443 \u0441\u043E\u0441\u0435\u0434\u0435\u0439.
+        icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        for (const name of ['class', 'width', 'height', 'style']) if (sourceIcon.hasAttribute(name)) icon.setAttribute(name, sourceIcon.getAttribute(name));
+        icon.setAttribute('viewBox', '0 0 20 20');
+        icon.setAttribute('fill', 'none');
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', 'M8.5 3.5a1.75 1.75 0 0 1 3.5 0V5h3a1 1 0 0 1 1 1v3h-1.5a1.75 1.75 0 0 0 0 3.5H16v3a1 1 0 0 1-1 1h-3v-1.5a1.75 1.75 0 0 0-3.5 0V16h-3a1 1 0 0 1-1-1v-3h1.5a1.75 1.75 0 0 0 0-3.5H4.5V6a1 1 0 0 1 1-1h3z');
+        path.setAttribute('stroke', 'currentColor');
+        path.setAttribute('stroke-width', '1.25');
+        path.setAttribute('stroke-linejoin', 'round');
+        icon.appendChild(path);
+      }
       icon.setAttribute('aria-hidden', 'true');
-      icon.textContent = '\uE055';
       button.replaceChildren();
       button.appendChild(icon);
-      if (button.getAttribute('role') !== 'tab') button.className = 'flex h-control w-full items-center gap-sm rounded px-sm text-left text-body cursor-pointer text-secondary hover:bg-fill-ghost-hover hover:text-primary';
+      if (button.getAttribute('role') !== 'tab') button.className = navigationClass(connector, false);
       const label = document.createElement('span');
       label.className = 'min-w-0 flex-1 truncate';
       label.dataset.tamlerLabel = '';
@@ -378,14 +415,14 @@ function installManager(window, api, request) {
       button.appendChild(label);
       button.addEventListener('click', () => void open());
       button.addEventListener('keydown', event => {
-        if (event.key === 'ArrowRight' || event.key === 'ArrowDown') { event.preventDefault(); skill.focus(); }
+        if (event.key === 'ArrowRight' || event.key === 'ArrowDown') { event.preventDefault(); connector.focus(); }
       });
       buttons.add(button);
       const item = document.createElement('li');
       item.dataset.tamlerNavigationItem = '';
       item.dataset.testid = 'tamler-settings';
       item.appendChild(button);
-      parent.insertBefore(item, skill.parentElement);
+      parent.insertBefore(item, anchorItem);
     }
     if (opened) {
       if (!host?.isConnected) void open();
