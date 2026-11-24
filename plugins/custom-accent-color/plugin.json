@@ -2,7 +2,7 @@
   "id": "custom-accent-color",
   "name": "Custom Accent Color",
   "description": "Your own accent color, Claude orange and background tint across the whole app",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "main": "index.js",
   "settings": [
     { "key": "accent", "type": "color", "label": "Accent color", "description": "Buttons, switches, links, focus rings and selection. Blue by default.", "default": "#2a78d6", "options": [

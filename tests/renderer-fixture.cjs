@@ -7,6 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { loadPlugins, serializePlugins } = require('../runtime/main.cjs');
 const { installTamler } = require('../runtime/renderer.cjs');
+const { shiftScale, tintScale } = require('../plugins/custom-accent-color/color.js');
 
 function write(root, files) {
   for (const [name, content] of Object.entries(files)) {
@@ -88,6 +89,7 @@ app.whenReady().then(async () => {
   let code = 0;
   try {
     write(root, plugins);
+    fs.cpSync(path.join(__dirname, '../plugins/custom-accent-color'), path.join(root, 'custom-accent-color'), { recursive: true });
     const loaded = loadPlugins(root);
     for (const plugin of loaded) assert.equal(plugin.error, undefined, `${plugin.id}: ${plugin.error}`);
     const window = new BrowserWindow({ show: false, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false } });
@@ -144,6 +146,49 @@ app.whenReady().then(async () => {
 
     await page(`document.body.dispatchEvent(new Event('tamler-test')); true`);
     assert.ok((await page('window.Tamler.errors')).some(error => error.id === 'listener' && /listener failed/.test(error.message)));
+
+    const accentId = 'custom-accent-color';
+    const accent = '#8b5cf6';
+    const brand = '#6b7280';
+    const tint = 70;
+    await page(`window.Tamler.storageChanged('${accentId}', { accent: '${accent}', brand: '${brand}', tint: ${tint} }); true`);
+    await page(`(() => {
+      document.body.insertAdjacentHTML('beforeend', '<div id="light" class="cds-root" data-mode="light"></div><div id="dark" class="cds-root" data-mode="dark" data-cds-unthemed></div><div id="legacy" class="cds-root" data-cds-fizzy-lake="color"></div><div id="named" class="cds-root" data-cds-theme="test"></div>');
+      const stylesheet = document.createElement('style');
+      stylesheet.textContent = ${JSON.stringify(`
+        @layer claude {
+          :where(:root, :host), :where([data-cds-unthemed]) {
+            --cds-blue-450: #257de0; --cds-blue-500: #1f6ec2;
+            --cds-gray-450: #797979; --cds-gray-850: #202020;
+          }
+          [data-cds-fizzy-lake~="color"] {
+            --cds-blue-450: #2a78d6; --cds-blue-500: #256abf;
+            --cds-gray-450: #7b7974; --cds-gray-850: #303030;
+          }
+          .cds-root:not([data-cds-theme]) { --cds-surface-sidebar: #fafafa; }
+          @media screen {
+            .cds-root[data-mode="dark"] { --cds-surface-sidebar: #1f1f1f; }
+          }
+          .cds-root[data-cds-theme="test"] { --cds-surface-sidebar: #313131; }
+          .cds-root { --cds-clay: #d97757; }
+        }
+      `)};
+      document.head.append(stylesheet);
+    })()`);
+    const computedColor = (selector, token) => page(`getComputedStyle(document.querySelector('${selector}')).getPropertyValue('${token}').trim()`);
+    const tinted = value => tintScale({ value }, accent, tint / 100).value;
+    assert.equal(await computedColor('#light', '--cds-blue-500'), shiftScale({ 450: '#257de0', 500: '#1f6ec2' }, '450', accent)[500]);
+    assert.equal(await computedColor('#legacy', '--cds-gray-850'), tinted('#303030'));
+    assert.equal(await computedColor('#dark', '--cds-blue-450'), accent);
+    assert.equal(await computedColor('#dark', '--cds-gray-850'), tinted('#202020'));
+    assert.equal(await computedColor('#light', '--cds-surface-sidebar'), tinted('#fafafa'));
+    assert.equal(await computedColor('#dark', '--cds-surface-sidebar'), tinted('#1f1f1f'));
+    assert.equal(await computedColor('#named', '--cds-surface-sidebar'), '#313131');
+    assert.equal(await computedColor('#dark', '--cds-clay'), brand);
+    await page(`window.Tamler.disable('${accentId}'); true`);
+    assert.equal(await computedColor('#dark', '--cds-blue-450'), '#257de0');
+    assert.equal(await computedColor('#dark', '--cds-surface-sidebar'), '#1f1f1f');
+    assert.equal(await computedColor('#dark', '--cds-clay'), '#d97757');
 
     const fresh = `[${serializePlugins(loaded, () => ({}))}]`;
     await page(`window.Tamler.update(${fresh}, { paused: true }); true`);
