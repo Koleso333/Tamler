@@ -20,7 +20,7 @@ New-Item -ItemType Directory -Path $tamlerData -Force | Out-Null
 @{ node = (Get-Command node.exe).Source } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $tamlerData 'autostart.json') -Encoding UTF8
 $tamlerPowerShell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
 $tamlerArguments = "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$tamlerRoot\scripts\watch.ps1`""
-New-Item -Path $tamlerKey -Force | Out-Null
+if (-not (Test-Path -LiteralPath $tamlerKey)) { New-Item -Path $tamlerKey | Out-Null }
 Set-ItemProperty -LiteralPath $tamlerKey -Name Tamler -Value "`"$tamlerPowerShell`" $tamlerArguments"
 Start-Process -FilePath $tamlerPowerShell -ArgumentList $tamlerArguments -WindowStyle Hidden
 Write-Output 'Tamler autostart enabled'
